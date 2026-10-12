@@ -30,8 +30,8 @@ npm start      # 启动服务
 
 当前已部署到公网（Cloudflare 临时隧道），任何人可直接访问：
 
-- **公网地址（本次会话）**：https://priced-his-labels-merchants.trycloudflare.com
-- 公网后台：https://priced-his-labels-merchants.trycloudflare.com/admin
+- **公网地址（本次会话）**：https://suspected-fountain-differently-utc.trycloudflare.com
+- 公网后台：https://suspected-fountain-differently-utc.trycloudflare.com/admin
 
 临时域名每次重启隧道会变化。一键同时拉起「本地服务 + 公网隧道」：
 
