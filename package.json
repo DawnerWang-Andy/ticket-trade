@@ -1,0 +1,16 @@
+{
+  "name": "ticket-trade",
+  "version": "0.1.0",
+  "private": true,
+  "description": "票流转 - 合规二手票务交易平台（全栈 MVP，零依赖）",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "seed": "node server/db.js --reset",
+    "test": "node scripts/smoke.mjs",
+    "check": "node --check server/index.js && node --check server/api.js && node --check server/db.js && node --check server/domain.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

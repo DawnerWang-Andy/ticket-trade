@@ -1,0 +1,22 @@
+# systemd 单元：票流转应用服务
+# 放置：/etc/systemd/system/tickettrade.service
+# 启用：systemctl daemon-reload && systemctl enable --now tickettrade
+[Unit]
+Description=Ticket Trade (piaoliuzhuan) MVP
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/tickettrade
+ExecStart=/usr/bin/node server/index.js
+Environment=PORT=8321
+Restart=always
+RestartSec=3
+# 基础加固
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/tickettrade/data
+
+[Install]
+WantedBy=multi-user.target

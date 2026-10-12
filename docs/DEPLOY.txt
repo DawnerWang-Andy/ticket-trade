@@ -1,0 +1,118 @@
+部署与运行说明
+
+  版本：2026-09-28 ｜ 适用：票流转 MVP（Fans-to-Fans 票务交流社区，零依赖 Node.js 全栈）
+
+------------------------------------------------------------------------
+
+1. 当前公网部署状态（已完成）
+
+网站已经部署到互联网，架构为本地服务 + Cloudflare 快速隧道：
+
+    互联网用户 → https://<随机域名>.trycloudflare.com（Cloudflare 边缘，HTTPS）
+               → 加密隧道 → 本机 Node 服务（localhost:8321）→ SQLite 文件（data/tickettrade.db）
+
+- 公网地址：见 cloudflared 进程输出中 Visit it at 一行（快速隧道的域名是临时的，每次重启隧道都会变化）
+- 一键启动：bash scripts/start-public.sh（同时拉起应用服务与隧道，Ctrl+C 一起停止）
+- 组成进程（两个都必须存活）：node server/index.js ＋ cloudflared tunnel
+- 前提：本机开机并联网；电脑休眠/断网时公网不可访问
+- 性质：演示/内测可用，不适合正式运营（无 SLA、域名不固定）。要固定域名：注册免费 Cloudflare 账号，创建命名隧道（named tunnel）绑定自己的域名
+
+2. 本地开发运行
+
+    # 要求 Node.js >= 22.5（内置 node:sqlite 与 node:http，零 npm 依赖）
+    npm run seed   # 初始化/重置演示数据（可随时重跑）
+    npm start      # 启动服务 → http://localhost:8321
+
+入口：
+
+  页面               地址
+  ------------------ ---------------------------------
+  粉丝社区（首页）   http://localhost:8321/#/
+  票品展示           http://localhost:8321/#/tickets
+  经营后台           http://localhost:8321/admin
+
+演示账号（手机号即登录）：管理员 18800000000 ｜ 商家卖家 13933334444 ｜ 个人卖家 13911112222 ｜ 买家 13955556666。
+
+3. MVP 验收清单（怎样算”跑通”）
+
+按顺序走一遍即完成验收：
+
+1.  打开首页：社区帖子、演出图片、法律依据提示块正常加载。
+2.  用买家账号登录 → 发布新帖（转票帖填票面价/转让价/凭证/联系方式）→ 详情页展示成功。
+3.  换另一账号（或未实名新账号）：联系方式显示锁定提示；实名登录后可见 → 发表留言成功。
+4.  风险验证：发布转让价高于票面价的帖子 → 被 422 拦截；发布含”先付定金”的帖子 → 自动打风险标记。
+5.  管理后台登录（18800000000）→「社区管理」：验真审核通过/拒绝、举报处理隐藏帖子生效；仪表盘社区待办数字联动。
+6.  自动化验收（全绿即通过）：
+
+    npm run check                                        # 语法检查
+    node scripts/smoke.mjs                               # 60 项端到端测试（本地）
+    BASE=https://<公网地址> node scripts/smoke.mjs        # 60 项（走公网，验证部署）
+    /opt/anaconda3/envs/polymer/bin/python scripts/forum-shots.py   # 30 项页面渲染 + 截图
+
+4. 生产部署指南（VPS 正式方案）
+
+4.1 服务器与基础环境
+
+- 推荐：2C2G、Ubuntu 22.04/24.04。面向中国大陆用户且放境内机房 → 必须先完成 ICP 备案（域名备案 + 网站备案），未备案可先用香港/境外机房做内测（访问速度略慢，无备案要求，但正式运营仍需合规手续，见 docs/LEGAL.md）。
+
+    # 安装 Node.js 24 LTS（Ubuntu）
+    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+    sudo apt install -y nodejs nginx certbot python3-certbot-nginx
+
+    # 上传代码（本机执行）
+    rsync -avz --exclude data --exclude scripts/shots ./ ubuntu@<服务器IP>:/opt/tickettrade/
+
+    # 服务器上初始化
+    cd /opt/tickettrade && npm run seed
+
+4.2 常驻运行（systemd）
+
+项目自带现成单元文件 deploy/tickettrade.service：
+
+    sudo cp deploy/tickettrade.service /etc/systemd/system/
+    sudo systemctl daemon-reload && sudo systemctl enable --now tickettrade
+    systemctl status tickettrade        # 查看状态
+    journalctl -u tickettrade -f        # 看日志
+
+4.3 Nginx 反代 + HTTPS
+
+使用项目自带配置 deploy/nginx.conf：
+
+    sudo cp deploy/nginx.conf /etc/nginx/sites-available/tickettrade
+    sudo vi /etc/nginx/sites-available/tickettrade   # 把 your-domain.com 改成你的域名
+    sudo ln -s /etc/nginx/sites-available/tickettrade /etc/nginx/sites-enabled/
+    sudo nginx -t && sudo systemctl reload nginx
+    sudo certbot --nginx -d your-domain.com          # 自动签发并配置 HTTPS
+
+防火墙只开放 80/443（sudo ufw allow 'Nginx Full'），8321 端口不对外。
+
+4.4 数据备份
+
+全部数据都在单个 SQLite 文件里，备份即拷贝：
+
+    # 每日凌晨备份，保留 14 天（crontab -e）
+    0 3 * * * cp /opt/tickettrade/data/tickettrade.db /opt/tickettrade/data/backup-$(date +\%F).db && find /opt/tickettrade/data -name 'backup-*.db' -mtime +14 -delete
+
+5. 日常运维速查
+
+  -----------------------------------------------------------------------------------------------------------------------
+  场景                                操作
+  ----------------------------------- -----------------------------------------------------------------------------------
+  重置演示数据                        npm run seed（会清空全部业务数据）
+
+  更新代码                            git pull（或重新 rsync）→ sudo systemctl restart tickettrade
+
+  隧道域名变了                        快速隧道特性如此；查看 cloudflared 输出的新地址并告知用户，或改用命名隧道固定域名
+
+  端口被占用                          lsof -i :8321 找到进程后 kill <PID> 再启动
+
+  database is locked                  多个进程同时写库；确保只有一个 node 进程，再重启服务
+
+  改平台参数                          后台「平台设置」；注意价格上限已被服务端限制在 0–1.0，不可调高（合规红线）
+  -----------------------------------------------------------------------------------------------------------------------
+
+6. 上线前必须知道的三件事
+
+1.  演示登录不等于生产安全：当前”手机号即登录”仅用于演示。公网正式环境前必须接入真实验证（短信验证码或账号密码 + bcrypt 哈希存储），否则任何人可用任意身份登录，包括管理员。
+2.  备案：面向中国大陆提供服务的网站，放境内机房需 ICP 备案；开通后 30 日内做公安联网备案。论坛已无需”BBS 专项备案”（2010 年取消）。完整清单见 docs/LEGAL.md 第四节。
+3.  内容责任：公网开放后，跟帖评论的审核、举报处置、日志留存（≥6 个月）是法定义务（《网络安全法》第四十九条、《互联网跟帖评论服务管理规定》）。后台「社区管理」已实现处置闭环，需要安排人日常巡查。
